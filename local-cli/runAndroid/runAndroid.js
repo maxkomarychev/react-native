@@ -9,9 +9,11 @@
 const adb = require('./adb');
 const chalk = require('chalk');
 const child_process = require('child_process');
+const glob = require('glob');
 const fs = require('fs');
 const isPackagerRunning = require('../util/isPackagerRunning');
 const findReactNativeScripts = require('../util/findReactNativeScripts');
+const head = require('lodash/head')
 const isString = require('lodash/isString');
 const path = require('path');
 const Promise = require('promise');
@@ -31,7 +33,7 @@ function runAndroid(argv, config, args) {
       child_process.spawnSync(
         reactNativeScriptsPath,
         ['android'].concat(process.argv.slice(1)),
-        {stdio: 'inherit'}
+        { stdio: 'inherit' }
       );
     } else {
       console.log(chalk.red('Android project not found. Maybe run react-native android first?'));
@@ -104,16 +106,16 @@ function buildAndRun(args) {
     : './gradlew';
 
   const packageName = fs.readFileSync(
-      `${args.appFolder}/src/main/AndroidManifest.xml`,
-      'utf8'
-    ).match(/package="(.+?)"/)[1];
+    `${args.appFolder}/src/main/AndroidManifest.xml`,
+    'utf8'
+  ).match(/package="(.+?)"/)[1];
 
   const packageNameWithSuffix = getPackageNameWithSuffix(args.appId, args.appIdSuffix, packageName);
 
   const adbPath = getAdbPath();
   if (args.deviceId) {
     if (isString(args.deviceId)) {
-        runOnSpecificDevice(args, cmd, packageNameWithSuffix, packageName, adbPath);
+      runOnSpecificDevice(args, cmd, packageNameWithSuffix, packageName, adbPath);
     } else {
       console.log(chalk.red('Argument missing for parameter --deviceId'));
     }
@@ -158,8 +160,10 @@ function buildApk(gradlew, args) {
 
 
 function tryInstallAppOnDevice(args, device) {
+  console.log('tryinstall', { args, device })
   try {
-    const pathToApk = `${args.appFolder}/build/outputs/apk/${args.appFolder}-debug.apk`;
+    // const pathToApk = `${args.appFolder}/build/outputs/apk/${args.appFolder}-debug.apk`;
+    const pathToApk = getAPKName(args);
     const adbPath = getAdbPath();
     const adbArgs = ['-s', device, 'install', pathToApk];
     console.log(chalk.bold(
@@ -182,7 +186,7 @@ function tryLaunchAppOnDevice(device, packageNameWithSuffix, packageName, adbPat
     console.log(chalk.bold(
       `Starting the app on ${device} (${adbPath} ${adbArgs.join(' ')})...`
     ));
-    child_process.spawnSync(adbPath, adbArgs, {stdio: 'inherit'});
+    child_process.spawnSync(adbPath, adbArgs, { stdio: 'inherit' });
   } catch (e) {
     console.log(chalk.red(
       'adb invocation failed. Do you have adb in your PATH?'
@@ -194,6 +198,22 @@ function installAndLaunchOnDevice(args, selectedDevice, packageNameWithSuffix, p
   tryRunAdbReverse(args.port, selectedDevice);
   tryInstallAppOnDevice(args, selectedDevice);
   tryLaunchAppOnDevice(selectedDevice, packageNameWithSuffix, packageName, adbPath, args.mainActivity);
+}
+
+function getAPKName(args) {
+  let name = []
+  name.push(args.appFolder)
+  const rest = args.variant || args.flavor
+  if (rest) {
+    const components = rest.split(/(?=[A-Z])/).map(item => item.toLowerCase())
+    name = name.concat(components)
+  } else {
+    name.push('debug')
+  }
+  const candidates = glob.sync(
+    `./${args.appFolder}/build/outputs/apk/**/${name.join('-')}*.apk`
+  );
+  return head(candidates)
 }
 
 function getGradleArgs(task, args) {
@@ -235,33 +255,33 @@ function runOnAllDevices(args, cmd, packageNameWithSuffix, packageName, adbPath)
     // `console.log(e.stderr)`
     return Promise.reject();
   }
-    const devices = adb.getDevices();
-    if (devices && devices.length > 0) {
-      devices.forEach((device) => {
-        tryRunAdbReverse(args.port, device);
-        tryLaunchAppOnDevice(device, packageNameWithSuffix, packageName, adbPath, args.mainActivity);
-      });
-    } else {
-      try {
-        // If we cannot execute based on adb devices output, fall back to
-        // shell am start
-        const fallbackAdbArgs = [
-          'shell', 'am', 'start', '-n', packageNameWithSuffix + '/' + packageName + '.MainActivity'
-        ];
-        console.log(chalk.bold(
-          `Starting the app (${adbPath} ${fallbackAdbArgs.join(' ')}...`
-        ));
-        child_process.spawnSync(adbPath, fallbackAdbArgs, {stdio: 'inherit'});
-      } catch (e) {
-        console.log(chalk.red(
-          'adb invocation failed. Do you have adb in your PATH?'
-        ));
-        // stderr is automatically piped from the gradle process, so the user
-        // should see the error already, there is no need to do
-        // `console.log(e.stderr)`
-        return Promise.reject();
-      }
+  const devices = adb.getDevices();
+  if (devices && devices.length > 0) {
+    devices.forEach((device) => {
+      tryRunAdbReverse(args.port, device);
+      tryLaunchAppOnDevice(device, packageNameWithSuffix, packageName, adbPath, args.mainActivity);
+    });
+  } else {
+    try {
+      // If we cannot execute based on adb devices output, fall back to
+      // shell am start
+      const fallbackAdbArgs = [
+        'shell', 'am', 'start', '-n', packageNameWithSuffix + '/' + packageName + '.MainActivity'
+      ];
+      console.log(chalk.bold(
+        `Starting the app (${adbPath} ${fallbackAdbArgs.join(' ')}...`
+      ));
+      child_process.spawnSync(adbPath, fallbackAdbArgs, { stdio: 'inherit' });
+    } catch (e) {
+      console.log(chalk.red(
+        'adb invocation failed. Do you have adb in your PATH?'
+      ));
+      // stderr is automatically piped from the gradle process, so the user
+      // should see the error already, there is no need to do
+      // `console.log(e.stderr)`
+      return Promise.reject();
     }
+  }
 }
 
 function startServerInNewWindow(port) {
@@ -270,14 +290,14 @@ function startServerInNewWindow(port) {
     'launchPackager.command';
   const scriptsDir = path.resolve(__dirname, '..', '..', 'scripts');
   const launchPackagerScript = path.resolve(scriptsDir, scriptFile);
-  const procConfig = {cwd: scriptsDir};
+  const procConfig = { cwd: scriptsDir };
   const terminal = process.env.REACT_TERMINAL;
 
   // setup the .packager.env file to ensure the packager starts on the right port
   const packagerEnvFile = path.join(__dirname, '..', '..', 'scripts', '.packager.env');
   const content = `export RCT_METRO_PORT=${port}`;
   // ensure we overwrite file by passing the 'w' flag
-  fs.writeFileSync(packagerEnvFile, content, {encoding: 'utf8', flag: 'w'});
+  fs.writeFileSync(packagerEnvFile, content, { encoding: 'utf8', flag: 'w' });
 
   if (process.platform === 'darwin') {
     if (terminal) {
@@ -287,7 +307,7 @@ function startServerInNewWindow(port) {
 
   } else if (process.platform === 'linux') {
     procConfig.detached = true;
-    if (terminal){
+    if (terminal) {
       return child_process.spawn(terminal, ['-e', 'sh ' + launchPackagerScript], procConfig);
     }
     return child_process.spawn('sh', [launchPackagerScript], procConfig);
