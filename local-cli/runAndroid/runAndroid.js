@@ -126,7 +126,7 @@ function runOnSpecificDevice(args, gradlew, packageNameWithSuffix, packageName, 
   let devices = adb.getDevices();
   if (devices && devices.length > 0) {
     if (devices.indexOf(args.deviceId) !== -1) {
-      buildApk(gradlew);
+      buildApk(gradlew, getGradleArgs('assemble', args));
       installAndLaunchOnDevice(args, args.deviceId, packageNameWithSuffix, packageName, adbPath);
     } else {
       console.log('Could not find device with the id: "' + args.deviceId + '".');
@@ -138,18 +138,24 @@ function runOnSpecificDevice(args, gradlew, packageNameWithSuffix, packageName, 
   }
 }
 
-function buildApk(gradlew) {
+function buildApk(gradlew, args) {
   try {
-    console.log(chalk.bold('Building the app...'));
+    console.log(chalk.bold(
+      `Executing gradle task (cd android && ${gradlew} ${args.join(' ')})...`
+    ));
 
     // using '-x lint' in order to ignore linting errors while building the apk
-    child_process.execFileSync(gradlew, ['build', '-x', 'lint'], {
+    child_process.execFileSync(gradlew, [...args, '-x', 'lint'], {
       stdio: [process.stdin, process.stdout, process.stderr],
     });
   } catch (e) {
-    console.log(chalk.red('Could not build the app, read the error above for details.\n'));
+    console.log(chalk.red(
+      'Could not execute gradle task, read the error above for details.\n')
+    );
+    throw e;
   }
 }
+
 
 function tryInstallAppOnDevice(args, device) {
   try {
@@ -190,35 +196,33 @@ function installAndLaunchOnDevice(args, selectedDevice, packageNameWithSuffix, p
   tryLaunchAppOnDevice(selectedDevice, packageNameWithSuffix, packageName, adbPath, args.mainActivity);
 }
 
-function runOnAllDevices(args, cmd, packageNameWithSuffix, packageName, adbPath){
-  try {
-    const gradleArgs = [];
-    if (args.variant) {
-      gradleArgs.push('install' +
-        args.variant[0].toUpperCase() + args.variant.slice(1)
-      );
-    } else if (args.flavor) {
-      console.warn(chalk.yellow(
-        '--flavor has been deprecated. Use --variant instead'
-      ));
-      gradleArgs.push('install' +
-        args.flavor[0].toUpperCase() + args.flavor.slice(1)
-      );
-    } else {
-      gradleArgs.push('installDebug');
-    }
-
-    if (args.installDebug) {
-      gradleArgs.push(args.installDebug);
-    }
-
-    console.log(chalk.bold(
-      `Building and installing the app on the device (cd android && ${cmd} ${gradleArgs.join(' ')})...`
+function getGradleArgs(task, args) {
+  const gradleArgs = [];
+  if (args.variant) {
+    gradleArgs.push(task +
+      args.variant[0].toUpperCase() + args.variant.slice(1)
+    );
+  } else if (args.flavor) {
+    console.warn(chalk.yellow(
+      '--flavor has been deprecated. Use --variant instead'
     ));
+    gradleArgs.push(task +
+      args.flavor[0].toUpperCase() + args.flavor.slice(1)
+    );
+  } else {
+    gradleArgs.push(`${task}Debug`);
+  }
 
-    child_process.execFileSync(cmd, gradleArgs, {
-      stdio: [process.stdin, process.stdout, process.stderr],
-    });
+  if (args.installDebug) {
+    gradleArgs.push(args.installDebug);
+  }
+  return gradleArgs
+}
+
+function runOnAllDevices(args, cmd, packageNameWithSuffix, packageName, adbPath) {
+  try {
+    const gradleArgs = getGradleArgs('install', args)
+    buildApk(cmd, gradleArgs)
   } catch (e) {
     console.log(chalk.red(
       'Could not install the app on the device, read the error above for details.\n' +
