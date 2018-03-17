@@ -165,7 +165,7 @@ function tryInstallAppOnDevice(args, device) {
     // const pathToApk = `${args.appFolder}/build/outputs/apk/${args.appFolder}-debug.apk`;
     const pathToApk = getAPKName(args);
     const adbPath = getAdbPath();
-    const adbArgs = ['-s', device, 'install', pathToApk];
+    const adbArgs = ['-s', device, 'install', '-r', pathToApk];
     console.log(chalk.bold(
       `Installing the app on the device (cd android && adb -s ${device} install ${pathToApk}`
     ));
